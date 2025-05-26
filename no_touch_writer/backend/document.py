@@ -8,7 +8,9 @@ class Document:
 
     def apply_actions(self, new_actions: List[Action]):
         self.history.append(self.actions.copy())
-        
+        if len(self.history) > 10:
+            self.history.pop(0)
+
         for action in new_actions:
             if action.target_heading:
                 # Try to find the heading in the current doc
