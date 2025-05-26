@@ -2,6 +2,8 @@ window.onload = function () {
   const startBtn = document.getElementById("start");
   const undoBtn = document.getElementById("undo");
   const docDiv = document.getElementById("doc");
+  const redoBtn = document.getElementById("redo");
+  const clearBtn = document.getElementById("clear");
 
   let recognition;
   let isListening = false;
@@ -33,6 +35,20 @@ window.onload = function () {
         setTimeout(() => {
           recognition.start();
         }, 800);
+      }
+    };
+
+    redoBtn.onclick = () => {
+      fetch("http://localhost:8000/redo", {
+        method: "POST"
+      }).then(refreshDoc);
+    };
+
+    clearBtn.onclick = () => {
+      if (confirm("Are you sure you want to clear the page?")) {
+        fetch("http://localhost:8000/clear", {
+          method: "POST"
+        }).then(refreshDoc);
       }
     };
 

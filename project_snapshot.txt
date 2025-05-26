@@ -1,0 +1,645 @@
+./
+  export_snapshot.py
+  --- BEGIN export_snapshot.py ---
+  import os
+  
+  IGNORE_FOLDERS = {'.git', '__pycache__', '.venv', 'node_modules', '.idea', '.DS_Store', '.mypy_cache'}
+  ALLOWED_EXTENSIONS = {'.py', '.js', '.ts', '.html', '.css', '.txt', '.env', '.sh'}
+  
+  output_file = "project_snapshot.txt"
+  
+  def should_include(file, path):
+      if not any(file.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+          return False
+      if "typing" in path or "site-packages" in path or "venv" in path:
+          return False
+      return True
+  
+  with open(output_file, "w") as out:
+      for root, dirs, files in os.walk("."):
+          # Skip ignored directories
+          dirs[:] = [d for d in dirs if d not in IGNORE_FOLDERS]
+  
+          level = root.count(os.sep)
+          indent = "  " * level
+          out.write(f"{indent}{os.path.basename(root)}/\n")
+  
+          for file in sorted(files):
+              filepath = os.path.join(root, file)
+              if file.startswith(".") or not should_include(file, filepath):
+                  continue
+  
+              file_indent = "  " * (level + 1)
+              
+              if os.path.getsize(filepath) > 100_000:
+                  out.write(f"{file_indent}{file} [Skipped: too large > 100KB]\n\n")
+                  continue
+  
+              out.write(f"{file_indent}{file}\n")
+              try:
+                  with open(filepath, "r", encoding="utf-8") as f:
+                      content = f.read()
+                      out.write(f"{file_indent}--- BEGIN {file} ---\n")
+                      for line in content.splitlines():
+                          out.write(f"{file_indent}{line}\n")
+                      out.write(f"{file_indent}--- END {file} ---\n\n")
+              except Exception as e:
+                  out.write(f"{file_indent}[Could not read file: {e}]\n\n")
+  
+  
+  print(f"✅ Snapshot saved to {output_file}")
+  --- END export_snapshot.py ---
+
+  project_snapshot.txt
+  --- BEGIN project_snapshot.txt ---
+  --- END project_snapshot.txt ---
+
+  no_touch_writer/
+    run.sh
+    --- BEGIN run.sh ---
+    #!/bin/bash
+    uvicorn backend.main:app --reload --port 8000
+    --- END run.sh ---
+
+    frontend/
+      index.html
+      --- BEGIN index.html ---
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Ghostscribe 👻 ✍️</title>
+        <link rel="stylesheet" href="styles.css">
+      </head>
+      <body>
+        <h1>Ghostscribe 👻 ✍️</h1>
+        <button id="start">🎤 Start Listening</button>
+        <button id="undo">↩️ Undo</button>
+        <button id="redo">↪️ Redo</button>
+        <button id="clear">🗑️ Clear Page</button>
+        <div id="doc"></div>
+        <script src="script.js"></script>
+      </body>
+      </html>
+      --- END index.html ---
+
+      script.js
+      --- BEGIN script.js ---
+      window.onload = function () {
+        const startBtn = document.getElementById("start");
+        const undoBtn = document.getElementById("undo");
+        const docDiv = document.getElementById("doc");
+        const redoBtn = document.getElementById("redo");
+        const clearBtn = document.getElementById("clear");
+      
+        let recognition;
+        let isListening = false;
+      
+        if ('webkitSpeechRecognition' in window) {
+          recognition = new webkitSpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = false;
+          recognition.lang = 'en-US';
+      
+          let lastSpoken = '';
+      
+          recognition.onresult = function (event) {
+            const result = event.results[event.resultIndex];
+            if (result.isFinal) {
+              lastSpoken = result[0].transcript.trim();
+              fetch("http://localhost:8000/voice", {
+                method: "POST",
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: lastSpoken })
+              }).then(refreshDoc);
+      
+              recognition.stop(); // Let onend handle restart
+            }
+          };
+      
+          recognition.onend = () => {
+            if (isListening) {
+              setTimeout(() => {
+                recognition.start();
+              }, 800);
+            }
+          };
+      
+          redoBtn.onclick = () => {
+            fetch("http://localhost:8000/redo", {
+              method: "POST"
+            }).then(refreshDoc);
+          };
+      
+          clearBtn.onclick = () => {
+            if (confirm("Are you sure you want to clear the page?")) {
+              fetch("http://localhost:8000/clear", {
+                method: "POST"
+              }).then(refreshDoc);
+            }
+          };
+      
+          startBtn.onclick = () => {
+            if (isListening) {
+              recognition.stop();
+              startBtn.innerText = "🎤 Start Listening";
+            } else {
+              recognition.start();
+              startBtn.innerText = "⏹️ Stop Listening";
+            }
+            isListening = !isListening;
+          };
+        }
+      
+        undoBtn.onclick = () => {
+          fetch("http://localhost:8000/undo", {
+            method: "POST"
+          }).then(refreshDoc);
+        };
+      
+        function refreshDoc() {
+          fetch("http://localhost:8000/doc")
+            .then(res => res.json())
+            .then(data => {
+              docDiv.innerHTML = "";
+              data.content.forEach(block => {
+                let el;
+                if (block.type === "heading") {
+                  el = document.createElement(`h${block.level || 2}`);
+                } else if (block.type === "paragraph") {
+                  el = document.createElement("p");
+                } else if (block.type === "bullet") {
+                  el = document.createElement("li");
+                } else {
+                  el = document.createElement("div");
+                }
+                el.innerText = block.content;
+                docDiv.appendChild(el);
+              });
+            });
+        }
+      
+        refreshDoc();
+      };
+      --- END script.js ---
+
+      styles.css
+      --- BEGIN styles.css ---
+      body {
+        font-family: sans-serif;
+        padding: 20px;
+        background: #f9f9f9;
+      }
+      button {
+        margin-right: 10px;
+        padding: 10px 20px;
+        font-size: 16px;
+      }
+      #doc {
+        margin-top: 20px;
+        padding: 20px;
+        background: white;
+        border: 1px solid #ddd;
+      }
+      --- END styles.css ---
+
+    backend/
+      actions.py
+      --- BEGIN actions.py ---
+      import os
+      import json
+      from typing import List
+      from backend.models import Action
+      from openai import OpenAI
+      from dotenv import load_dotenv
+      
+      # Load your OpenAI key from .env
+      load_dotenv()
+      client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+      
+      def parse_text_to_actions(text: str) -> List[Action]:
+          prompt = f"""
+              You are a document-writing assistant that must interpret spoken user instructions and convert them into structured editing actions.
+      
+              Your job is to determine:
+              1. Is the user asking you to generate content (e.g., "suggest", "write", "generate", "draft")?
+              2. Or are they simply dictating content to be inserted as-is?
+      
+              ### If they are asking for generated content:
+              - Use your own words to write the output.
+              - Make sure to include relevant bullet points or paragraph content based on the request.
+              - Include a field called "target_heading" if the user specifies where it should go.
+      
+              ### If they are dictating (no trigger words):
+              - Just treat their full sentence as a "paragraph" or "bullet".
+              - Still use "target_heading" if applicable.
+      
+              Always return a valid JSON array of actions:
+              [
+              {{ "type": "heading", "content": "Morning Plan", "level": 2 }},
+              {{ "type": "paragraph", "content": "Start your day with intention", "target_heading": "Morning" }},
+              {{ "type": "bullet", "content": "Drink water first thing", "target_heading": "Morning" }}
+              ]
+      
+              Now respond ONLY with the action list based on this input:
+              "{text}"
+          """
+      
+          try:
+              response = client.chat.completions.create(
+                  model="gpt-4",
+                  messages=[{ "role": "user", "content": prompt }],
+                  temperature=0.4
+              )
+      
+              raw = response.choices[0].message.content.strip()
+              parsed = json.loads(raw)
+      
+              return [Action(**a) for a in parsed if a.get("type") and a.get("content")]
+      
+          except Exception as e:
+              return [Action(type="paragraph", content=f"[OpenAI Error] {str(e)}")]
+      --- END actions.py ---
+
+      document.py
+      --- BEGIN document.py ---
+      from backend.models import Action
+      from typing import List
+      
+      class Document:
+          def __init__(self):
+              self.actions: List[Action] = []
+              self.history: List[List[Action]] = []
+      
+          def apply_actions(self, new_actions: List[Action]):
+              self.history.append(self.actions.copy())
+              if len(self.history) > 10:
+                  self.history.pop(0)
+      
+              for action in new_actions:
+                  if action.target_heading:
+                      # Try to find the heading in the current doc
+                      index = next((i for i, a in enumerate(self.actions)
+                                  if a.type == "heading" and a.content.strip().lower() == action.target_heading.strip().lower()), None)
+                      if index is not None:
+                          # Insert right after the found heading
+                          self.actions.insert(index + 1, action)
+                          continue  # Skip appending to bottom
+                  self.actions.append(action)
+      
+          def undo_last(self, n: int = 1):
+              if not self.history:
+                  return
+              self.actions = self.history[-n]
+              self.history = self.history[:-n]
+      
+          def get_content(self):
+              return self.actions
+      --- END document.py ---
+
+      main.py
+      --- BEGIN main.py ---
+      from fastapi import FastAPI
+      from fastapi.middleware.cors import CORSMiddleware
+      from backend.models import VoiceCommand, Action
+      from backend.document import Document
+      from backend.actions import parse_text_to_actions
+      from dotenv import load_dotenv
+      
+      # Load environment variables from .env
+      load_dotenv()
+      
+      # Initialize app and document state
+      app = FastAPI()
+      doc = Document()
+      
+      # Allow frontend to communicate with backend
+      app.add_middleware(
+          CORSMiddleware,
+          allow_origins=["*"],
+          allow_methods=["*"],
+          allow_headers=["*"],
+      )
+      
+      # Endpoint to receive transcribed voice text and convert to actions
+      @app.post("/voice")
+      def process_voice(command: VoiceCommand):
+          lowered = command.text.strip().lower()
+      
+          if lowered.startswith("undo") or "remove last" in lowered:
+              import re
+              match = re.search(r"(undo|remove last)\s*(\d+)?", lowered)
+              count = int(match.group(2)) if match and match.group(2) else 1
+              doc.undo_last(count)
+              return {"status": f"undid {count} action(s)"}
+      
+          actions = parse_text_to_actions(command.text)
+          if actions:
+              doc.apply_actions(actions)
+          return {"actions": actions}
+      
+      # Undo the last N sets of actions
+      @app.post("/undo")
+      def undo_last(n: int = 1):
+          doc.undo_last(n)
+          return {"status": "undone", "remaining_actions": doc.get_content()}
+      
+      # Get current document state
+      @app.get("/doc")
+      def get_doc():
+          return {"content": doc.get_content()}
+      
+      @app.post("/redo")
+      def redo_last(n: int = 1):
+          doc.redo_last(n)
+          return {"status": "redone", "remaining_actions": doc.get_content()}
+      
+      @app.post("/clear")
+      def clear_doc():
+          doc.actions.clear()
+          doc.history.clear()
+          doc.redo_stack.clear()
+          return {"status": "cleared"}
+      --- END main.py ---
+
+      models.py
+      --- BEGIN models.py ---
+      from pydantic import BaseModel
+      from typing import List, Optional
+      
+      class Action(BaseModel):
+          type: str  # 'heading', 'paragraph', 'bullet', etc.
+          content: str
+          level: Optional[int] = None  # for heading levels
+          target_heading: Optional[str] = None  # NEW: where this action should go
+      
+      class VoiceCommand(BaseModel):
+          text: str
+      
+      class DocumentState(BaseModel):
+          content: List[Action]
+      --- END models.py ---
+
+    venv/
+      bin/
+      include/
+        python3.13/
+      lib/
+        python3.13/
+          site-packages/
+            starlette-0.46.2.dist-info/
+              licenses/
+            pydantic_core-2.33.2.dist-info/
+              licenses/
+            idna-3.10.dist-info/
+            httpcore/
+              _backends/
+              _async/
+              _sync/
+            h11/
+            openai-1.82.0.dist-info/
+              licenses/
+            dotenv/
+            typing_inspection-0.4.1.dist-info/
+              licenses/
+            annotated_types/
+            pip-25.1.1.dist-info/
+              licenses/
+            anyio-4.9.0.dist-info/
+            distro/
+            pydantic-2.11.5.dist-info/
+              licenses/
+            starlette/
+              middleware/
+            tqdm-4.67.1.dist-info/
+            idna/
+            click/
+            typing_extensions-4.13.2.dist-info/
+              licenses/
+            httpcore-1.0.9.dist-info/
+              licenses/
+            jiter/
+            python_dotenv-1.1.0.dist-info/
+              licenses/
+            certifi-2025.4.26.dist-info/
+              licenses/
+            anyio/
+              abc/
+              _backends/
+              _core/
+              streams/
+            pip/
+              _internal/
+                network/
+                utils/
+                models/
+                cli/
+                operations/
+                  install/
+                  build/
+                req/
+                resolution/
+                  legacy/
+                  resolvelib/
+                vcs/
+                locations/
+                index/
+                commands/
+                metadata/
+                  importlib/
+                distributions/
+              _vendor/
+                packaging/
+                  licenses/
+                truststore/
+                msgpack/
+                dependency_groups/
+                pygments/
+                  filters/
+                  lexers/
+                  formatters/
+                  styles/
+                distlib/
+                distro/
+                cachecontrol/
+                  caches/
+                idna/
+                requests/
+                tomli/
+                certifi/
+                pyproject_hooks/
+                  _in_process/
+                rich/
+                tomli_w/
+                urllib3/
+                  util/
+                  contrib/
+                    _securetransport/
+                  packages/
+                    backports/
+                pkg_resources/
+                resolvelib/
+                  resolvers/
+                platformdirs/
+            h11-0.16.0.dist-info/
+              licenses/
+            sniffio-1.3.1.dist-info/
+            httpx/
+              _transports/
+            certifi/
+            sniffio/
+              _tests/
+            multipart/
+            tqdm/
+              contrib/
+            uvicorn-0.34.2.dist-info/
+              licenses/
+            python_multipart/
+            fastapi/
+              middleware/
+              security/
+              dependencies/
+              openapi/
+            click-8.2.1.dist-info/
+              licenses/
+            fastapi-0.115.12.dist-info/
+              licenses/
+            python_multipart-0.0.20.dist-info/
+              licenses/
+            distro-1.9.0.dist-info/
+            uvicorn/
+              middleware/
+              supervisors/
+              lifespan/
+              loops/
+              protocols/
+                websockets/
+                http/
+            jiter-0.10.0.dist-info/
+            httpx-0.28.1.dist-info/
+              licenses/
+            pydantic/
+              v1/
+              _internal/
+              experimental/
+              plugin/
+              deprecated/
+            typing_inspection/
+            annotated_types-0.7.0.dist-info/
+              licenses/
+            pydantic_core/
+            openai/
+              _utils/
+              types/
+                beta/
+                  chat/
+                  realtime/
+                  threads/
+                    runs/
+                vector_stores/
+                evals/
+                  runs/
+                fine_tuning/
+                  checkpoints/
+                  jobs/
+                  alpha/
+                chat/
+                  completions/
+                responses/
+                uploads/
+                shared/
+                shared_params/
+                audio/
+                containers/
+                  files/
+                graders/
+              _extras/
+              resources/
+                beta/
+                  chat/
+                  realtime/
+                  threads/
+                    runs/
+                vector_stores/
+                evals/
+                  runs/
+                fine_tuning/
+                  checkpoints/
+                  jobs/
+                  alpha/
+                chat/
+                  completions/
+                responses/
+                uploads/
+                audio/
+                containers/
+                  files/
+              cli/
+                _api/
+                  chat/
+                _tools/
+              lib/
+                _parsing/
+                streaming/
+                  chat/
+                  responses/
+              helpers/
+  venv/
+    bin/
+    include/
+      python3.13/
+    lib/
+      python3.13/
+        site-packages/
+          pip-25.0.1.dist-info/
+            licenses/
+          pip/
+            _internal/
+              network/
+              utils/
+              models/
+              cli/
+              operations/
+                install/
+                build/
+              req/
+              resolution/
+                legacy/
+                resolvelib/
+              vcs/
+              locations/
+              index/
+              commands/
+              metadata/
+                importlib/
+              distributions/
+            _vendor/
+              packaging/
+                licenses/
+              truststore/
+              msgpack/
+              pygments/
+                filters/
+                lexers/
+                formatters/
+                styles/
+              distlib/
+              distro/
+              cachecontrol/
+                caches/
+              idna/
+              requests/
+              tomli/
+              certifi/
+              pyproject_hooks/
+                _in_process/
+              rich/
+              urllib3/
+                util/
+                contrib/
+                  _securetransport/
+                packages/
+                  backports/
+              pkg_resources/
+              resolvelib/
+                compat/
+              platformdirs/

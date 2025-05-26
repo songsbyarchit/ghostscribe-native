@@ -47,3 +47,15 @@ def undo_last(n: int = 1):
 @app.get("/doc")
 def get_doc():
     return {"content": doc.get_content()}
+
+@app.post("/redo")
+def redo_last(n: int = 1):
+    doc.redo_last(n)
+    return {"status": "redone", "remaining_actions": doc.get_content()}
+
+@app.post("/clear")
+def clear_doc():
+    doc.actions.clear()
+    doc.history.clear()
+    doc.redo_stack.clear()
+    return {"status": "cleared"}
