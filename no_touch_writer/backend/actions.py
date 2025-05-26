@@ -24,16 +24,20 @@ def parse_text_to_actions(text: str) -> List[Action]:
         "{text}"
         
         Your job is to determine:
-        1. Is the user asking you to generate content (e.g., "suggest", "write", "generate", "draft")?
+        1. Is the user asking you to generate content? (e.g., they say: "give me", "list", "what are", "show", "create", "write", "generate", "suggest", "come up with")
         2. Are they simply dictating content to be inserted as-is?
-        3. Or are they giving structural editing instructions (e.g., "replace line 2", "delete line 4", "insert at line 3")?
+        3. Or are they giving structural editing instructions (e.g., "replace line 2", "delete line 4", "insert at line 3", "turn line 6 into a heading", "turn line 1 into a bullet point")?
 
         If it's case 3:
-        - Use the fields `operation: "replace" | "delete" | "insert"` and `target_line: <number>`.
-        - Include `type` and `content` if the operation is `insert` or `replace`.
+        - Use the fields `operation: "replace" | "delete" | "insert" | "change_type"` and `target_line: <number>`.
+        - If no line is specified, assume the insertion should be at the end.
+        - For `change_type`, you must also include the new `type` (e.g., "heading", "bullet", "subheading").
+        - For `replace` or `insert`, include both `type` and `content`.
+        - If the user says "turn line 3 into a heading" or "make line 5 a bullet point", treat it as `operation: "change_type"` with `target_line` and `type`.
 
         ### If they are asking for generated content:
-        - Use your own words to write the output.
+        - Interpret the user’s intent and generate original content using your own words and factual reasoning.
+        - For example, if the user says "Give me three reasons why squash is dangerous", you must generate three relevant bullet points as output.
         - Make sure to include relevant bullet points or paragraph content based on the request.
         - Include a field called "target_heading" if the user specifies where it should go.
 

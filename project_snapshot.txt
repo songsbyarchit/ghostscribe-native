@@ -252,7 +252,7 @@
       from backend.models import Action
       from openai import OpenAI
       from dotenv import load_dotenv
-      from backend.main import doc
+      from backend.state import doc
       
       # Load your OpenAI key from .env
       load_dotenv()
@@ -272,16 +272,20 @@
               "{text}"
               
               Your job is to determine:
-              1. Is the user asking you to generate content (e.g., "suggest", "write", "generate", "draft")?
+              1. Is the user asking you to generate content? (e.g., they say: "give me", "list", "what are", "show", "create", "write", "generate", "suggest", "come up with")
               2. Are they simply dictating content to be inserted as-is?
-              3. Or are they giving structural editing instructions (e.g., "replace line 2", "delete line 4", "insert at line 3")?
+              3. Or are they giving structural editing instructions (e.g., "replace line 2", "delete line 4", "insert at line 3", "turn line 6 into a heading", "turn line 1 into a bullet point")?
       
               If it's case 3:
-              - Use the fields `operation: "replace" | "delete" | "insert"` and `target_line: <number>`.
-              - Include `type` and `content` if the operation is `insert` or `replace`.
+              - Use the fields `operation: "replace" | "delete" | "insert" | "change_type"` and `target_line: <number>`.
+              - If no line is specified, assume the insertion should be at the end.
+              - For `change_type`, you must also include the new `type` (e.g., "heading", "bullet", "subheading").
+              - For `replace` or `insert`, include both `type` and `content`.
+              - If the user says "turn line 3 into a heading" or "make line 5 a bullet point", treat it as `operation: "change_type"` with `target_line` and `type`.
       
               ### If they are asking for generated content:
-              - Use your own words to write the output.
+              - Interpret the user’s intent and generate original content using your own words and factual reasoning.
+              - For example, if the user says "Give me three reasons why squash is dangerous", you must generate three relevant bullet points as output.
               - Make sure to include relevant bullet points or paragraph content based on the request.
               - Include a field called "target_heading" if the user specifies where it should go.
       
@@ -333,14 +337,23 @@
           def apply_actions(self, new_actions: List[Action]):
               self.history.append(self.actions.copy())
               self.redo_stack.clear()  # clear redo after new changes
-              if len(self.history) > 10:
+              if len(self.history) > 50:
                   self.history.pop(0)
               for action in new_actions:
-                  if hasattr(action, "operation") and action.operation:
+                  if hasattr(action, "operation") and action.operation == "change_type":
+                      if hasattr(action, "target_line") and 0 <= action.target_line < len(self.actions):
+                          self.history.append(self.actions.copy())
+                          self.redo_stack.clear()
+                          if len(self.history) > 50:
+                              self.history.pop(0)
+                          self.actions[action.target_line].type = action.type
+                      continue
+      
+                  elif hasattr(action, "operation") and action.operation:
                       self.apply_structural_action(action)
                       continue
       
-                  if action.target_heading:
+                  elif action.target_heading:
                       index = next((i for i, a in enumerate(self.actions)
                                   if a.type == "heading" and a.content.strip().lower() == action.target_heading.strip().lower()), None)
                       if index is not None:
@@ -372,6 +385,16 @@
               }
       
           def apply_structural_action(self, action: Action):
+              if action.target_line is None:
+                  # Safely append to end if no line is given
+                  self.actions.append(Action(
+                      type=action.type,
+                      content=action.content,
+                      level=action.level,
+                      target_heading=action.target_heading
+                  ))
+                  return
+      
               idx = action.target_line - 1  # 1-based to 0-based index
               if action.operation == "delete":
                   if 0 <= idx < len(self.actions):
@@ -407,7 +430,7 @@
       from fastapi import FastAPI
       from fastapi.middleware.cors import CORSMiddleware
       from backend.models import VoiceCommand, Action
-      from backend.document import Document
+      from backend.state import doc
       from backend.actions import parse_text_to_actions
       from dotenv import load_dotenv
       
@@ -416,7 +439,6 @@
       
       # Initialize app and document state
       app = FastAPI()
-      doc = Document()
       
       # Allow frontend to communicate with backend
       app.add_middleware(
@@ -477,7 +499,7 @@
           content: Optional[str] = None
           level: Optional[int] = None
           target_heading: Optional[str] = None
-          operation: Optional[str] = None  # "replace", "delete", or "insert"
+          operation: Optional[str] = None  # 'insert', 'replace', 'delete', 'change_type'
           target_line: Optional[int] = None
       
       class VoiceCommand(BaseModel):
@@ -486,6 +508,14 @@
       class DocumentState(BaseModel):
           content: List[Action]
       --- END models.py ---
+
+      state.py
+      --- BEGIN state.py ---
+      # backend/state.py
+      from backend.document import Document
+      
+      doc = Document()
+      --- END state.py ---
 
     venv/
       bin/

@@ -6,7 +6,7 @@ class Action(BaseModel):
     content: Optional[str] = None
     level: Optional[int] = None
     target_heading: Optional[str] = None
-    operation: Optional[str] = None  # "replace", "delete", or "insert"
+    operation: Optional[str] = None  # 'insert', 'replace', 'delete', 'change_type'
     target_line: Optional[int] = None
 
 class VoiceCommand(BaseModel):

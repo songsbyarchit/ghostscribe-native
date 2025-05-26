@@ -5,6 +5,14 @@ window.onload = function () {
   const redoBtn = document.getElementById("redo");
   const clearBtn = document.getElementById("clear");
 
+  function handleClearPage() {
+    if (confirm("Are you sure you want to clear the page?")) {
+      fetch("http://localhost:8000/clear", {
+        method: "POST"
+      }).then(refreshDoc);
+    }
+  }
+
   let recognition;
   let isListening = false;
 
@@ -20,15 +28,34 @@ window.onload = function () {
       const result = event.results[event.resultIndex];
       if (result.isFinal) {
         lastSpoken = result[0].transcript.trim();
+        if (!lastSpoken) return;
+
+        const clearPhrases = [
+          "clear page",
+          "erase everything",
+          "delete all",
+          "wipe it clean",
+          "start over",
+          "reset document",
+          "remove everything",
+          "clear everything"
+        ];
+
+        if (clearPhrases.some(p => lastSpoken.toLowerCase().includes(p))) {
+          handleClearPage();
+          return;
+        }
+
         fetch("http://localhost:8000/voice", {
           method: "POST",
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: lastSpoken })
         }).then(refreshDoc);
 
-        recognition.stop(); // Let onend handle restart
+        recognition.stop();
       }
     };
+
 
     recognition.onend = () => {
       if (isListening) {
@@ -111,7 +138,6 @@ function updateLineNumbers() {
     if (num) num.innerText = index + 1;
   });
 }
-
 
   refreshDoc();
 };
