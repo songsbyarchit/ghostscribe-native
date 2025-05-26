@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.models import VoiceCommand, Action
-from backend.document import Document
+from backend.state import doc
 from backend.actions import parse_text_to_actions
 from dotenv import load_dotenv
 
@@ -10,7 +10,6 @@ load_dotenv()
 
 # Initialize app and document state
 app = FastAPI()
-doc = Document()
 
 # Allow frontend to communicate with backend
 app.add_middleware(

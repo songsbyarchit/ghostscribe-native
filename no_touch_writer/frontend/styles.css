@@ -14,3 +14,23 @@ button {
   background: white;
   border: 1px solid #ddd;
 }
+.line-wrapper {
+  display: flex;
+  align-items: flex-start;
+}
+
+.line-number {
+  width: 30px;
+  margin-right: 10px;
+  text-align: right;
+  color: #888;
+  user-select: none;
+  font-family: monospace;
+}
+
+#doc {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: monospace;
+}

@@ -4,18 +4,33 @@ from typing import List
 from backend.models import Action
 from openai import OpenAI
 from dotenv import load_dotenv
+from backend.state import doc
 
 # Load your OpenAI key from .env
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def parse_text_to_actions(text: str) -> List[Action]:
+    current_state = get_current_doc()  # This should return a list of blocks
+    context_str = "\n".join([f"{b['type'].upper()}: {b['content']}" for b in current_state])
+
     prompt = f"""
         You are a document-writing assistant that must interpret spoken user instructions and convert them into structured editing actions.
 
+        ## CURRENT DOCUMENT:
+        {context_str}
+
+        ## USER INPUT:
+        "{text}"
+        
         Your job is to determine:
         1. Is the user asking you to generate content (e.g., "suggest", "write", "generate", "draft")?
-        2. Or are they simply dictating content to be inserted as-is?
+        2. Are they simply dictating content to be inserted as-is?
+        3. Or are they giving structural editing instructions (e.g., "replace line 2", "delete line 4", "insert at line 3")?
+
+        If it's case 3:
+        - Use the fields `operation: "replace" | "delete" | "insert"` and `target_line: <number>`.
+        - Include `type` and `content` if the operation is `insert` or `replace`.
 
         ### If they are asking for generated content:
         - Use your own words to write the output.
@@ -47,7 +62,10 @@ def parse_text_to_actions(text: str) -> List[Action]:
         raw = response.choices[0].message.content.strip()
         parsed = json.loads(raw)
 
-        return [Action(**a) for a in parsed if a.get("type") and a.get("content")]
+        return [Action(**a) for a in parsed if "operation" in a or ("type" in a and "content" in a)]
 
     except Exception as e:
         return [Action(type="paragraph", content=f"[OpenAI Error] {str(e)}")]
+    
+def get_current_doc():
+    return [a.dict() for a in doc.get_content()]

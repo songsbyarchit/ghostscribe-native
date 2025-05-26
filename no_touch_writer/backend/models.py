@@ -2,10 +2,12 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 class Action(BaseModel):
-    type: str  # 'heading', 'paragraph', 'bullet', etc.
-    content: str
-    level: Optional[int] = None  # for heading levels
-    target_heading: Optional[str] = None  # NEW: where this action should go
+    type: Optional[str] = None
+    content: Optional[str] = None
+    level: Optional[int] = None
+    target_heading: Optional[str] = None
+    operation: Optional[str] = None  # "replace", "delete", or "insert"
+    target_line: Optional[int] = None
 
 class VoiceCommand(BaseModel):
     text: str

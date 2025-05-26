@@ -161,22 +161,43 @@
             .then(res => res.json())
             .then(data => {
               docDiv.innerHTML = "";
-              data.content.forEach(block => {
-                let el;
-                if (block.type === "heading") {
-                  el = document.createElement(`h${block.level || 2}`);
-                } else if (block.type === "paragraph") {
-                  el = document.createElement("p");
-                } else if (block.type === "bullet") {
-                  el = document.createElement("li");
-                } else {
-                  el = document.createElement("div");
-                }
-                el.innerText = block.content;
-                docDiv.appendChild(el);
-              });
+      data.content.forEach((block, index) => {
+        let el;
+        if (block.type === "heading") {
+          el = document.createElement(`h${block.level || 2}`);
+        } else if (block.type === "paragraph") {
+          el = document.createElement("p");
+        } else if (block.type === "bullet") {
+          el = document.createElement("li");
+        } else {
+          el = document.createElement("div");
+        }
+        const lineWrapper = document.createElement("div");
+        lineWrapper.className = "line-wrapper";
+      
+        const lineNumber = document.createElement("div");
+        lineNumber.className = "line-number";
+        lineNumber.innerText = index + 1;
+        lineNumber.contentEditable = false;
+      
+        el.innerText = block.content;
+      
+        lineWrapper.appendChild(lineNumber);
+        lineWrapper.appendChild(el);
+        docDiv.appendChild(lineWrapper);
+      });
+      updateLineNumbers();
             });
         }
+      
+      function updateLineNumbers() {
+        const lines = document.querySelectorAll(".line-wrapper");
+        lines.forEach((line, index) => {
+          const num = line.querySelector(".line-number");
+          if (num) num.innerText = index + 1;
+        });
+      }
+      
       
         refreshDoc();
       };
@@ -200,6 +221,26 @@
         background: white;
         border: 1px solid #ddd;
       }
+      .line-wrapper {
+        display: flex;
+        align-items: flex-start;
+      }
+      
+      .line-number {
+        width: 30px;
+        margin-right: 10px;
+        text-align: right;
+        color: #888;
+        user-select: none;
+        font-family: monospace;
+      }
+      
+      #doc {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-family: monospace;
+      }
       --- END styles.css ---
 
     backend/
@@ -211,18 +252,33 @@
       from backend.models import Action
       from openai import OpenAI
       from dotenv import load_dotenv
+      from backend.main import doc
       
       # Load your OpenAI key from .env
       load_dotenv()
       client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
       
       def parse_text_to_actions(text: str) -> List[Action]:
+          current_state = get_current_doc()  # This should return a list of blocks
+          context_str = "\n".join([f"{b['type'].upper()}: {b['content']}" for b in current_state])
+      
           prompt = f"""
               You are a document-writing assistant that must interpret spoken user instructions and convert them into structured editing actions.
       
+              ## CURRENT DOCUMENT:
+              {context_str}
+      
+              ## USER INPUT:
+              "{text}"
+              
               Your job is to determine:
               1. Is the user asking you to generate content (e.g., "suggest", "write", "generate", "draft")?
-              2. Or are they simply dictating content to be inserted as-is?
+              2. Are they simply dictating content to be inserted as-is?
+              3. Or are they giving structural editing instructions (e.g., "replace line 2", "delete line 4", "insert at line 3")?
+      
+              If it's case 3:
+              - Use the fields `operation: "replace" | "delete" | "insert"` and `target_line: <number>`.
+              - Include `type` and `content` if the operation is `insert` or `replace`.
       
               ### If they are asking for generated content:
               - Use your own words to write the output.
@@ -254,10 +310,13 @@
               raw = response.choices[0].message.content.strip()
               parsed = json.loads(raw)
       
-              return [Action(**a) for a in parsed if a.get("type") and a.get("content")]
+              return [Action(**a) for a in parsed if "operation" in a or ("type" in a and "content" in a)]
       
           except Exception as e:
               return [Action(type="paragraph", content=f"[OpenAI Error] {str(e)}")]
+          
+      def get_current_doc():
+          return [a.dict() for a in doc.get_content()]
       --- END actions.py ---
 
       document.py
@@ -269,31 +328,78 @@
           def __init__(self):
               self.actions: List[Action] = []
               self.history: List[List[Action]] = []
+              self.redo_stack: List[List[Action]] = []
       
           def apply_actions(self, new_actions: List[Action]):
               self.history.append(self.actions.copy())
+              self.redo_stack.clear()  # clear redo after new changes
               if len(self.history) > 10:
                   self.history.pop(0)
-      
               for action in new_actions:
+                  if hasattr(action, "operation") and action.operation:
+                      self.apply_structural_action(action)
+                      continue
+      
                   if action.target_heading:
-                      # Try to find the heading in the current doc
                       index = next((i for i, a in enumerate(self.actions)
                                   if a.type == "heading" and a.content.strip().lower() == action.target_heading.strip().lower()), None)
                       if index is not None:
-                          # Insert right after the found heading
                           self.actions.insert(index + 1, action)
-                          continue  # Skip appending to bottom
+                          continue
+      
                   self.actions.append(action)
+      
       
           def undo_last(self, n: int = 1):
               if not self.history:
                   return
+              self.redo_stack.append(self.actions.copy())
               self.actions = self.history[-n]
               self.history = self.history[:-n]
       
+          def redo_last(self, n: int = 1):
+              if not self.redo_stack:
+                  return
+              self.history.append(self.actions.copy())
+              self.actions = self.redo_stack.pop()
+      
           def get_content(self):
               return self.actions
+          
+          def to_dict(self):
+              return {
+                  "content": [a.dict() for a in self.actions]
+              }
+      
+          def apply_structural_action(self, action: Action):
+              idx = action.target_line - 1  # 1-based to 0-based index
+              if action.operation == "delete":
+                  if 0 <= idx < len(self.actions):
+                      self.history.append(self.actions.copy())
+                      self.redo_stack.clear()
+                      self.actions.pop(idx)
+      
+              elif action.operation == "replace":
+                  if 0 <= idx < len(self.actions):
+                      self.history.append(self.actions.copy())
+                      self.redo_stack.clear()
+                      self.actions[idx] = Action(
+                          type=action.type,
+                          content=action.content,
+                          level=action.level,
+                          target_heading=action.target_heading
+                      )
+      
+              elif action.operation == "insert":
+                  if 0 <= idx <= len(self.actions):
+                      self.history.append(self.actions.copy())
+                      self.redo_stack.clear()
+                      self.actions.insert(idx, Action(
+                          type=action.type,
+                          content=action.content,
+                          level=action.level,
+                          target_heading=action.target_heading
+                      ))
       --- END document.py ---
 
       main.py
@@ -367,10 +473,12 @@
       from typing import List, Optional
       
       class Action(BaseModel):
-          type: str  # 'heading', 'paragraph', 'bullet', etc.
-          content: str
-          level: Optional[int] = None  # for heading levels
-          target_heading: Optional[str] = None  # NEW: where this action should go
+          type: Optional[str] = None
+          content: Optional[str] = None
+          level: Optional[int] = None
+          target_heading: Optional[str] = None
+          operation: Optional[str] = None  # "replace", "delete", or "insert"
+          target_line: Optional[int] = None
       
       class VoiceCommand(BaseModel):
           text: str

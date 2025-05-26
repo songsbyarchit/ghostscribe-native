@@ -13,13 +13,19 @@ class Document:
         if len(self.history) > 10:
             self.history.pop(0)
         for action in new_actions:
+            if hasattr(action, "operation") and action.operation:
+                self.apply_structural_action(action)
+                continue
+
             if action.target_heading:
                 index = next((i for i, a in enumerate(self.actions)
-                              if a.type == "heading" and a.content.strip().lower() == action.target_heading.strip().lower()), None)
+                            if a.type == "heading" and a.content.strip().lower() == action.target_heading.strip().lower()), None)
                 if index is not None:
                     self.actions.insert(index + 1, action)
                     continue
+
             self.actions.append(action)
+
 
     def undo_last(self, n: int = 1):
         if not self.history:
@@ -36,3 +42,38 @@ class Document:
 
     def get_content(self):
         return self.actions
+    
+    def to_dict(self):
+        return {
+            "content": [a.dict() for a in self.actions]
+        }
+
+    def apply_structural_action(self, action: Action):
+        idx = action.target_line - 1  # 1-based to 0-based index
+        if action.operation == "delete":
+            if 0 <= idx < len(self.actions):
+                self.history.append(self.actions.copy())
+                self.redo_stack.clear()
+                self.actions.pop(idx)
+
+        elif action.operation == "replace":
+            if 0 <= idx < len(self.actions):
+                self.history.append(self.actions.copy())
+                self.redo_stack.clear()
+                self.actions[idx] = Action(
+                    type=action.type,
+                    content=action.content,
+                    level=action.level,
+                    target_heading=action.target_heading
+                )
+
+        elif action.operation == "insert":
+            if 0 <= idx <= len(self.actions):
+                self.history.append(self.actions.copy())
+                self.redo_stack.clear()
+                self.actions.insert(idx, Action(
+                    type=action.type,
+                    content=action.content,
+                    level=action.level,
+                    target_heading=action.target_heading
+                ))

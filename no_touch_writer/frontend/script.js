@@ -75,22 +75,43 @@ window.onload = function () {
       .then(res => res.json())
       .then(data => {
         docDiv.innerHTML = "";
-        data.content.forEach(block => {
-          let el;
-          if (block.type === "heading") {
-            el = document.createElement(`h${block.level || 2}`);
-          } else if (block.type === "paragraph") {
-            el = document.createElement("p");
-          } else if (block.type === "bullet") {
-            el = document.createElement("li");
-          } else {
-            el = document.createElement("div");
-          }
-          el.innerText = block.content;
-          docDiv.appendChild(el);
-        });
+data.content.forEach((block, index) => {
+  let el;
+  if (block.type === "heading") {
+    el = document.createElement(`h${block.level || 2}`);
+  } else if (block.type === "paragraph") {
+    el = document.createElement("p");
+  } else if (block.type === "bullet") {
+    el = document.createElement("li");
+  } else {
+    el = document.createElement("div");
+  }
+  const lineWrapper = document.createElement("div");
+  lineWrapper.className = "line-wrapper";
+
+  const lineNumber = document.createElement("div");
+  lineNumber.className = "line-number";
+  lineNumber.innerText = index + 1;
+  lineNumber.contentEditable = false;
+
+  el.innerText = block.content;
+
+  lineWrapper.appendChild(lineNumber);
+  lineWrapper.appendChild(el);
+  docDiv.appendChild(lineWrapper);
+});
+updateLineNumbers();
       });
   }
+
+function updateLineNumbers() {
+  const lines = document.querySelectorAll(".line-wrapper");
+  lines.forEach((line, index) => {
+    const num = line.querySelector(".line-number");
+    if (num) num.innerText = index + 1;
+  });
+}
+
 
   refreshDoc();
 };
