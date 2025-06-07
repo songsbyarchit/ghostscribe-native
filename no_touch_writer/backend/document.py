@@ -8,10 +8,12 @@ class Document:
         self.redo_stack: List[List[Action]] = []
 
     def apply_actions(self, new_actions: List[Action]):
+        self.pending_deletes = []
         self.history.append(self.actions.copy())
         self.redo_stack.clear()  # clear redo after new changes
         if len(self.history) > 50:
             self.history.pop(0)
+        self.pending_deletes = [a for a in new_actions if a.operation == "delete"]
         for action in new_actions:
             if hasattr(action, "operation") and action.operation == "change_type":
                 if hasattr(action, "target_line") and 0 <= action.target_line < len(self.actions):
@@ -22,10 +24,11 @@ class Document:
                     self.actions[action.target_line].type = action.type
                 continue
 
+            elif hasattr(action, "operation") and action.operation == "delete":
+                continue  # skip for now, handle all deletes at once later
             elif hasattr(action, "operation") and action.operation:
                 self.apply_structural_action(action)
                 continue
-
             elif action.target_heading:
                 index = next((i for i, a in enumerate(self.actions)
                             if a.type == "heading" and a.content.strip().lower() == action.target_heading.strip().lower()), None)
@@ -35,6 +38,9 @@ class Document:
 
             self.actions.append(action)
 
+        if self.pending_deletes:
+            dummy = Action(operation="delete", target_line=self.pending_deletes[0].target_line)
+            self.apply_structural_action(dummy)
 
     def undo_last(self, n: int = 1):
         for _ in range(n):
@@ -72,10 +78,16 @@ class Document:
         idx = action.target_line  # Already 1-based index, so use as-is
 
         if action.operation == "delete":
-            if 0 <= idx - 1 < len(self.actions):
-                self.history.append(self.actions.copy())
-                self.redo_stack.clear()
-                self.actions.pop(idx - 1)
+            self.history.append(self.actions.copy())
+            self.redo_stack.clear()
+            delete_indices = sorted(
+                [a.target_line - 1 for a in self.pending_deletes if a.operation == "delete"],
+                reverse=True
+            )
+            for i in delete_indices:
+                if 0 <= i < len(self.actions):
+                    self.actions.pop(i)
+            return
 
         elif action.operation == "replace":
             if 0 <= idx < len(self.actions):

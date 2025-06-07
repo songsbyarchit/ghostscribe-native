@@ -75,8 +75,10 @@ def generate_actions(text: str, case: str, model_name: str = "gpt-3.5-turbo") ->
         prompt = base_prompt + """
         You must generate original document content from scratch based on the user input.
 
-        If the input includes phrases like "under", "beneath", or "below", NEVER generate a heading. Only generate bullets or paragraphs placed under the referenced heading.
-        
+        If the input includes phrases like "under", "beneath", or "below", NEVER generate a heading. You must assume the heading already exists and only add bullets or paragraphs beneath it.
+
+        Do not repeat or re-add existing headings from the document. Always target the nearest preceding heading or use the target_heading field if specified.
+
         All generated content must use sentence case. Do not use title case or lowercase for headings, bullets, or paragraphs. Capitalise only the first word of each sentence or proper nouns.
 
         Return a JSON array of actions (headings, paragraphs, bullets, etc.).
