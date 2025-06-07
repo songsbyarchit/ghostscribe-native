@@ -4,6 +4,7 @@ from backend.models import VoiceCommand, Action
 from backend.state import doc
 from backend.actions import parse_text_to_actions
 from dotenv import load_dotenv
+import re
 
 # Load environment variables from .env
 load_dotenv()
@@ -25,16 +26,33 @@ def process_voice(command: VoiceCommand):
     lowered = command.text.strip().lower()
 
     if lowered.startswith("undo") or "remove last" in lowered:
-        import re
         match = re.search(r"(undo|remove last)\s*(\d+)?", lowered)
         count = int(match.group(2)) if match and match.group(2) else 1
         doc.undo_last(count)
         return {"status": f"undid {count} action(s)"}
 
     actions = parse_text_to_actions(command.text)
+
     if actions:
+        for a in actions:
+            if isinstance(a.content, str) and not a.target_heading:
+                match = re.search(r"under(?:neath)? line (\d+)", a.content.lower())
+                if match:
+                    target_line = int(match.group(1))
+                    lines = doc.get_content()
+                    if 0 < target_line <= len(lines):
+                        a.target_heading = lines[target_line - 1].content
+                else:
+                    # Strip known vague prepositions so they don't confuse OpenAI
+                    a.content = re.sub(r"\b(under|beneath|below|underneath)\b", "", a.content, flags=re.IGNORECASE).strip()
+
+        if not any(a.operation or a.type for a in actions):
+            return {"status": "No valid actions detected"}
+        
         doc.apply_actions(actions)
+
     return {"actions": actions}
+
 
 # Undo the last N sets of actions
 @app.post("/undo")

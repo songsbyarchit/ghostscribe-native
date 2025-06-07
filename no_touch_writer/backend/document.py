@@ -69,12 +69,13 @@ class Document:
             ))
             return
 
-        idx = action.target_line - 1  # 1-based to 0-based index
+        idx = action.target_line  # Already 1-based index, so use as-is
+
         if action.operation == "delete":
-            if 0 <= idx < len(self.actions):
+            if 0 <= idx - 1 < len(self.actions):
                 self.history.append(self.actions.copy())
                 self.redo_stack.clear()
-                self.actions.pop(idx)
+                self.actions.pop(idx - 1)
 
         elif action.operation == "replace":
             if 0 <= idx < len(self.actions):
