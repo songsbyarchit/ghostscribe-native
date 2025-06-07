@@ -32,11 +32,15 @@ def process_voice(command: VoiceCommand):
         return {"status": f"undid {count} action(s)"}
 
     actions = parse_text_to_actions(command.text)
+    print("ACTIONS GENERATED:", actions)
 
     if actions:
         for a in actions:
+            if hasattr(a, "operation") and a.operation == "delete":
+                continue  # Skip assignment logic for structural deletes
+
             if isinstance(a.content, str) and not a.target_heading:
-                match = re.search(r"under(?:neath)? line (\d+)", a.content.lower())
+                match = re.search(r"(?:under(?:neath)?|below|beneath) line (\d+)", a.content.lower())
                 if match:
                     target_line = int(match.group(1))
                     lines = doc.get_content()

@@ -5,6 +5,7 @@ from backend.models import Action
 from openai import OpenAI
 from dotenv import load_dotenv
 from backend.state import doc
+import re
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -99,13 +100,8 @@ def generate_actions(text: str, case: str, model_name: str = "gpt-3.5-turbo") ->
         ]
         """
     elif case == "dictation":
-        prompt = base_prompt + """
-        The user is dictating content. Treat it as a paragraph or bullet depending on the phrasing.
-        Respond with a single JSON object wrapped in an array.
-
-        Example:
-        [ { "type": "paragraph", "content": "This is what the user said." } ]
-        """
+        stripped = re.sub(r"^\s*write\s+", "", text, flags=re.IGNORECASE).strip()
+        return [Action(type="paragraph", content=stripped)]
     else:
         prompt = base_prompt + f"""
         You must parse structural editing instructions and return a list of JSON actions.
@@ -133,10 +129,15 @@ def generate_actions(text: str, case: str, model_name: str = "gpt-3.5-turbo") ->
         )
         raw = response.choices[0].message.content.strip()
         parsed = json.loads(raw)
+        print("RAW OPENAI RESPONSE:", raw)
+        if isinstance(parsed, dict):
+            # unwrap nested key if GPT returns a dict (like {"structural_delete": [...]})
+            parsed = list(parsed.values())[0]
         return [Action(**a) for a in parsed]
     except Exception as e:
         return []
 
 def parse_text_to_actions(text: str, model_name: str = "gpt-3.5-turbo") -> List[Action]:
     case = classify_instruction(text, model_name=model_name)
+    print("CLASSIFIED AS:", case)  # <-- Add this
     return generate_actions(text, case, model_name=model_name)
